@@ -70,7 +70,18 @@ class DbAct:
         if not self.user_is_existed(user_id):
             return None
         self.__db.db_write('UPDATE users SET phone = ? WHERE user_id = ?', (phone, user_id))
-        
+    
+    def get_all_users_with_username(self):
+        """
+        Возвращает список user_id всех пользователей, у которых заполнен ник (username).
+        Используется для рассылки сообщений.
+        """
+        # Используем проверку длины, чтобы избежать проблем с пустыми строками
+        users = self.__db.db_read(
+            "SELECT user_id FROM users WHERE nick_name IS NOT NULL AND LENGTH(nick_name) > 0",
+            ()
+        )
+        return [user[0] for user in users]
 
 
 

@@ -30,8 +30,9 @@ class Bot_inline_btns:
         return keyboard
     
     def admin_buttons(self):
-        one = types.InlineKeyboardButton('🔹 Экспорировать', callback_data="export_users")
-        self.__markup.add(one)
+        one = types.InlineKeyboardButton('🔹 Экспортировать пользователей', callback_data="export_users")
+        two = types.InlineKeyboardButton('📢 Рассылка пользователям', callback_data="broadcast")
+        self.__markup.add(one, two)
         return self.__markup
     
     def support_buttons(self):

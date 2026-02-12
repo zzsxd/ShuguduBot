@@ -33,19 +33,74 @@ def main():
             '2️⃣ Поделись номером — так я буду знать, куда прислать твой гайд💜',
             parse_mode='HTML', reply_markup=buttons.start_buttons())
         elif command == 'admin':
-            bot.send_message(user_id, "<b>Добро пожаловать в Админ-Панель!</b>"
-                             "\n\nВыберите пункт ниже!", reply_markup=buttons.admin_buttons(), parse_mode='HTML')
+            # Проверяем, что пользователь является администратором
+            if db_actions.user_is_admin(user_id) or user_id in config.get_config()['admins']:
+                # гарантируем наличие пользователя в БД
+                if not db_actions.user_is_existed(user_id):
+                    db_actions.add_user(user_id, message.from_user.first_name, message.from_user.last_name,
+                                        f'@{message.from_user.username}', None)
+                bot.send_message(user_id, "<b>Добро пожаловать в Админ-Панель!</b>"
+                                 "\n\nВыберите пункт ниже!", reply_markup=buttons.admin_buttons(), parse_mode='HTML')
+            else:
+                bot.send_message(user_id, "У вас нет прав доступа к админ-панели.")
         
         elif command == 'support':
             bot.send_message(user_id, "Вы можете обратиться в службу поддержки ShuGuDu по контакту ниже или по номеру телефона в WhatsApp! 💜", reply_markup=buttons.support_buttons())
             bot.send_contact(user_id, phone_number="+79931955487", first_name="ShuGuDu Поддержка")
 
-    @bot.message_handler(content_types=['text', 'photo', 'contact'])
+    @bot.message_handler(content_types=['text', 'photo', 'video', 'contact'])
     def text_message(message):
         user_id = message.chat.id
         chat_id = "@ShuGuDuLashes"
         user_input = message.text
         buttons = Bot_inline_btns()
+        # Блок обработки админ-режимов (например, рассылка)
+        if db_actions.user_is_existed(user_id) and (db_actions.user_is_admin(user_id) or user_id in config.get_config()['admins']):
+            admin_action = db_actions.get_user_system_key(user_id, "admin_action")
+            if admin_action == "broadcast_wait_content" and message.content_type in ['text', 'photo', 'video']:
+                # Получаем список пользователей для рассылки (только с username)
+                recipients = db_actions.get_all_users_with_username()
+                total = len(recipients)
+                sent_ok = 0
+                if total == 0:
+                    db_actions.set_user_system_key(user_id, "admin_action", None)
+                    bot.send_message(user_id, "Рассылка отменена: нет пользователей с username в базе.")
+                    return
+                # Рассылка в зависимости от типа контента
+                if message.photo:
+                    # Берём последнее фото (наибольшее по размеру)
+                    photo = message.photo[-1].file_id
+                    caption = message.caption if message.caption else None
+                    for uid in recipients:
+                        try:
+                            bot.send_photo(uid, photo, caption=caption)
+                            sent_ok += 1
+                        except Exception:
+                            continue
+                elif message.video:
+                    video = message.video.file_id
+                    caption = message.caption if message.caption else None
+                    for uid in recipients:
+                        try:
+                            bot.send_video(uid, video, caption=caption)
+                            sent_ok += 1
+                        except Exception:
+                            continue
+                elif message.text:
+                    for uid in recipients:
+                        try:
+                            bot.send_message(uid, message.text)
+                            sent_ok += 1
+                        except Exception:
+                            continue
+                # Сбрасываем режим рассылки для админа
+                db_actions.set_user_system_key(user_id, "admin_action", None)
+                bot.send_message(
+                    user_id,
+                    f"Рассылка завершена.\nУспешно доставлено: {sent_ok} из {total} пользователей."
+                )
+                return
+
         if db_actions.user_is_existed(user_id):
             if message.contact:
                 db_actions.set_user_phone(user_id, message.contact.phone_number)
@@ -121,6 +176,10 @@ def main():
                     db_actions.db_export_xlsx()
                     bot.send_document(user_id, open(config.get_config()['xlsx_path'], 'rb'))
                     os.remove(config.get_config()['xlsx_path'])
+                elif call.data == "broadcast":
+                    # Включаем режим ожидания контента для рассылки
+                    db_actions.set_user_system_key(user_id, "admin_action", "broadcast_wait_content")
+                    bot.send_message(user_id, "📢 Режим рассылки включён.\nОтправьте сообщение, фото или видео, которое нужно разослать всем пользователям.")
             if call.data == 'share_contact':
                 bot.send_message(user_id, "Нажмите на кнопку ниже, чтобы отправить ваш номер!", reply_markup=buttons.share_contact())
     
